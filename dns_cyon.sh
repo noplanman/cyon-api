@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 
 ########
 # Custom cyon.ch DNS API for use with [acme.sh](https://github.com/Neilpang/acme.sh)
@@ -58,9 +58,9 @@ dns_cyon_add() {
 _load_credentials() {
   # Convert loaded password to/from base64 as needed.
   if [ "${cyon_password_b64}" ] ; then
-    cyon_password="$(echo ${cyon_password_b64} | _dbase64)"
+    cyon_password="$(echo "${cyon_password_b64}" | _dbase64)"
   elif [ "${cyon_password}" ] ; then
-    cyon_password_b64="$(echo ${cyon_password} | _base64)"
+    cyon_password_b64="$(echo "${cyon_password}" | _base64)"
   fi
 
   if [ -z "${cyon_username}" ] || [ -z "${cyon_password}" ] ; then
