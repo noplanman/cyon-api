@@ -49,6 +49,7 @@ dns_cyon_add() {
 
   _info_header
   _login
+  _domain_env
   _addtxt
   _cleanup
 
@@ -109,6 +110,33 @@ _login() {
   # Bail if login fails.
   if [ $(echo "${login_response}" | jq -r '.onSuccess') != "success" ]; then
     _fail "    $(echo "${login_response}" | jq -r '.message')"
+  fi
+
+  _info "    success"
+  _info ""
+}
+
+_domain_env() {
+  _info "  - Changing domain environment..."
+
+  # Get the "example.com" part of the full domain name.
+  domain_env=$(echo "${fulldomain}" | sed -E -e 's/.*\.(.*\..*)$/\1/')
+  _debug "Changing domain environment to ${domain_env}"
+
+  domain_env_response=$(curl \
+    "https://my.cyon.ch/user/environment/setdomain/d/${domain_env}/gik/domain%3A${domain_env}" \
+    -s \
+    --compressed \
+    -b "${cookiejar}" \
+    -H "X-Requested-With: XMLHttpRequest")
+
+  _debug domain_env_response "${domain_env_response}"
+
+  domain_env_success=$(echo "${domain_env_response}" | jq -r '.authenticated')
+
+  # Bail if domain environment change fails.
+  if [ "${domain_env_success}" != "true" ]; then
+    _fail "    $(echo "${domain_env_response}" | jq -r '.message')"
   fi
 
   _info "    success"
