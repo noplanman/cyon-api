@@ -95,39 +95,35 @@ _info_header() {
 
 _login() {
   _info "  - Logging in..."
-  login_response=$(curl "https://my.cyon.ch/auth/index/dologin-async" \
+  login_response=$(curl \
+    "https://my.cyon.ch/auth/index/dologin-async" \
     -s \
     -c "${cookiejar}" \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    -H "x-requested-with: XMLHttpRequest" \
+    -H "X-Requested-With: XMLHttpRequest" \
     --data-urlencode "username=${cyon_username}" \
     --data-urlencode "password=${cyon_password}" \
     --data-urlencode "pathname=/")
 
   _debug login_response "${login_response}"
 
-  login_success=$(echo "${login_response}" | jq -r '.onSuccess')
-  _info "    ${login_success}"
-
   # Bail if login fails.
-  if [ "${login_success}" != "success" ]; then
+  if [ $(echo "${login_response}" | jq -r '.onSuccess') != "success" ]; then
     _fail "    $(echo "${login_response}" | jq -r '.message')"
   fi
 
+  _info "    success"
   _info ""
 }
 
 _addtxt() {
   _info "  - Adding DNS TXT entry..."
-  addtxt_response=$(curl "https://my.cyon.ch/domain/dnseditor/add-record-async" \
-    --compressed \
+  addtxt_response=$(curl \
+    "https://my.cyon.ch/domain/dnseditor/add-record-async" \
     -s \
+    --compressed \
     -b "${cookiejar}" \
-    -H "Accept: */*" \
-    -H "Referer: https://my.cyon.ch/domain/dnseditor" \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    -H "x-requested-with: XMLHttpRequest" \
-    -d "type=TXT&ttl=900&zone=${fulldomain}.&value=${txtvalue}")
+    -H "X-Requested-With: XMLHttpRequest" \
+    -d "zone=${fulldomain}.&ttl=900&type=TXT&value=${txtvalue}")
 
   _debug addtxt_response "${addtxt_response}"
 
@@ -142,7 +138,7 @@ _addtxt() {
     _fail "    ${addtxt_message}"
   fi
 
-  _info "    ${addtxt_message}"
+  _info "    success"
   _info ""
 }
 
