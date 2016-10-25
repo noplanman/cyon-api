@@ -169,6 +169,8 @@ _domain_env() {
 
   _debug domain_env_response "${domain_env_response}"
 
+  _check_2fa_miss "${domain_env_response}"
+
   domain_env_success=$(echo "${domain_env_response}" | jq -r '.authenticated')
 
   # Bail if domain environment change fails.
@@ -192,6 +194,8 @@ _addtxt() {
 
   _debug addtxt_response "${addtxt_response}"
 
+  _check_2fa_miss "${addtxt_response}"
+
   addtxt_message=$(echo "${addtxt_response}" | jq -r '.message')
   addtxt_status=$(echo "${addtxt_response}" | jq -r '.status')
 
@@ -205,6 +209,13 @@ _addtxt() {
 
   _info "    success"
   _info ""
+}
+
+_check_2fa_miss() {
+  # Did we miss the 2FA?
+  if [ $(echo "${1}" | grep -o "multi_factor_form") ] ; then
+    _fail "    Missed OTP authentication!"
+  fi
 }
 
 _fail() {
