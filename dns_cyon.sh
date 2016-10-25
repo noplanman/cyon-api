@@ -26,11 +26,13 @@
 #
 # cyon_username='your_cyon_username'
 # cyon_password='your_cyon_password'
+# cyon_otp_secret='your_otp_secret' # Only required if using 2FA
 #
 # ...or export them as environment variables in your shell:
 #
 # $ export cyon_username='your_cyon_username'
 # $ export cyon_password='your_cyon_password'
+# $ export cyon_otp_secret='your_otp_secret' # Only required if using 2FA
 #
 # *Note:*
 # After the first run, the credentials are saved in the "account.conf"
@@ -76,6 +78,9 @@ _load_credentials() {
   _debug "Save credentials to account.conf"
   _saveaccountconf cyon_username "${cyon_username}"
   _saveaccountconf cyon_password_b64 "$cyon_password_b64"
+  if [ ! -z "${cyon_otp_secret}" ] ; then
+    _saveaccountconf cyon_otp_secret "$cyon_otp_secret"
+  fi
 }
 
 _info_header() {
@@ -113,6 +118,38 @@ _login() {
   fi
 
   _info "    success"
+
+
+  # NECESSARY!! Load the main page after login, before the OTP check.
+  curl "https://my.cyon.ch/" -s --compressed -b "${cookiejar}" >/dev/null
+
+
+  # 2FA authentication with OTP?
+  if [ ! -z "${cyon_otp_secret}" ] ; then
+    _info "  - Authorising with OTP code..."
+
+    # Get OTP code with the defined secret.
+    otp_code=$(oathtool --base32 --totp "${cyon_otp_secret}" 2>/dev/null)
+
+    otp_response=$(curl \
+      "https://my.cyon.ch/auth/multi-factor/domultifactorauth-async" \
+      -s \
+      --compressed \
+      -b "${cookiejar}" \
+      -c "${cookiejar}" \
+      -H "X-Requested-With: XMLHttpRequest" \
+      -d "totpcode=${otp_code}&pathname=%2F&rememberme=0")
+
+    _debug otp_response "${otp_response}"
+
+    # Bail if OTP authentication fails.
+    if [ $(echo "${otp_response}" | jq -r '.onSuccess') != "success" ]; then
+      _fail "    $(echo "${otp_response}" | jq -r '.message')"
+    fi
+
+    _info "    success"
+  fi
+
   _info ""
 }
 
