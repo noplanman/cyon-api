@@ -49,14 +49,36 @@ dns_cyon_add() {
   # Cookiejar required for login session, as cyon.ch has no official API (yet).
   cookiejar=$(tempfile)
 
-  _info_header
+  _info_header "add"
   _login
   _domain_env
-  _addtxt
+  _add_txt
   _cleanup
 
-  return 0;
+  return 0
 }
+
+dns_cyon_rm() {
+  _load_credentials
+
+  # Read the required parameters to delete the TXT entry.
+  fulldomain=$1
+
+  # Cookiejar required for login session, as cyon.ch has no official API (yet).
+  cookiejar=$(tempfile)
+
+  _info_header "delete"
+  _login
+  _domain_env
+  _delete_txt
+  _cleanup
+
+  return 0
+}
+
+#########################
+### PRIVATE FUNCTIONS ###
+#########################
 
 _load_credentials() {
   # Convert loaded password to/from base64 as needed.
@@ -84,19 +106,33 @@ _load_credentials() {
 }
 
 _info_header() {
-  _debug fulldomain "$fulldomain"
-  _debug txtvalue "$txtvalue"
-  _debug cookiejar "$cookiejar"
+  if [ "$1" = "add" ]; then
+    _debug fulldomain "$fulldomain"
+    _debug txtvalue "$txtvalue"
+    _debug cookiejar "$cookiejar"
 
-  _info ""
-  _info "+---------------------------------------------+"
-  _info "| Adding DNS TXT entry to your cyon.ch domain |"
-  _info "+---------------------------------------------+"
-  _info ""
-  _info "  * Full Domain: ${fulldomain}"
-  _info "  * TXT Value:   ${txtvalue}"
-  _info "  * Cookie Jar:  ${cookiejar}"
-  _info ""
+    _info ""
+    _info "+---------------------------------------------+"
+    _info "| Adding DNS TXT entry to your cyon.ch domain |"
+    _info "+---------------------------------------------+"
+    _info ""
+    _info "  * Full Domain: ${fulldomain}"
+    _info "  * TXT Value:   ${txtvalue}"
+    _info "  * Cookie Jar:  ${cookiejar}"
+    _info ""
+  elif [ "$1" = "delete" ]; then
+    _debug fulldomain "$fulldomain"
+    _debug cookiejar "$cookiejar"
+
+    _info ""
+    _info "+------------------------------------------------+"
+    _info "| Deleting DNS TXT entry from your cyon.ch domain |"
+    _info "+------------------------------------------------+"
+    _info ""
+    _info "  * Full Domain: ${fulldomain}"
+    _info "  * Cookie Jar:  ${cookiejar}"
+    _info ""
+  fi
 }
 
 _login() {
@@ -113,7 +149,7 @@ _login() {
   _debug login_response "${login_response}"
 
   # Bail if login fails.
-  if [ $(echo "${login_response}" | jq -r '.onSuccess') != "success" ]; then
+  if [ "$(echo "${login_response}" | jq -r '.onSuccess')" != "success" ]; then
     _fail "    $(echo "${login_response}" | jq -r '.message')"
   fi
 
@@ -143,7 +179,7 @@ _login() {
     _debug otp_response "${otp_response}"
 
     # Bail if OTP authentication fails.
-    if [ $(echo "${otp_response}" | jq -r '.onSuccess') != "success" ]; then
+    if [ "$(echo "${otp_response}" | jq -r '.onSuccess')" != "success" ]; then
       _fail "    $(echo "${otp_response}" | jq -r '.message')"
     fi
 
@@ -182,7 +218,7 @@ _domain_env() {
   _info ""
 }
 
-_addtxt() {
+_add_txt() {
   _info "  - Adding DNS TXT entry..."
   addtxt_response=$(curl \
     "https://my.cyon.ch/domain/dnseditor/add-record-async" \
@@ -211,9 +247,66 @@ _addtxt() {
   _info ""
 }
 
+_delete_txt() {
+  _info "  - Deleting DNS TXT entry..."
+
+  list_txt_response=$(curl \
+    "https://my.cyon.ch/domain/dnseditor/list-async" \
+    -s \
+    -b "${cookiejar}" \
+    --compressed \
+    -H "X-Requested-With: XMLHttpRequest")
+
+  _debug list_txt_response "${list_txt_response}"
+
+  _check_2fa_miss "${list_txt_response}"
+
+  # Find and delete all acme challenge entries for the $fulldomain.
+  echo "$list_txt_response" | jq -r --arg fulldomain "${fulldomain}." '
+    .rows[] |
+      label $out|
+      if .[0] != $fulldomain then
+        break $out
+      else
+        .[4]|
+        capture("data-hash=\"(?<hash>[^\"]*)\" data-identifier=\"(?<identifier>[^\"]*)\"";"g")|
+        .hash + " " + .identifier
+    end' | while read -r _hash _identifier
+  do
+    delete_txt_response=$(curl \
+      "https://my.cyon.ch/domain/dnseditor/delete-record-async" \
+      -s \
+      --compressed \
+      -b "${cookiejar}" \
+      -H "X-Requested-With: XMLHttpRequest" \
+      --data-urlencode "hash=${_hash}" \
+      --data-urlencode "identifier=${_identifier}")
+
+    _debug delete_txt_response "${delete_txt_response}"
+
+    _check_2fa_miss "${delete_txt_response}"
+
+    delete_txt_message=$(echo "${delete_txt_response}" | jq -r '.message')
+    delete_txt_status=$(echo "${delete_txt_response}" | jq -r '.status')
+
+    # Skip if deleting TXT entry fails.
+    if [ "${delete_txt_status}" != "true" ]; then
+      if [ "${delete_txt_status}" = "null" ]; then
+        delete_txt_message=$(echo "${delete_txt_response}" | jq -r '.error.message')
+      fi
+      _err "    ${delete_txt_message} (${_identifier})"
+    else
+      _info "    success (${_identifier})"
+    fi
+  done
+
+  _info "    done"
+  _info ""
+}
+
 _check_2fa_miss() {
   # Did we miss the 2FA?
-  if [ $(echo "${1}" | grep -o "multi_factor_form") ] ; then
+  if [[ "$1" =~ "multi_factor_form" ]] ; then
     _fail "    Missed OTP authentication!"
   fi
 }
