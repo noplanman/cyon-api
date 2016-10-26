@@ -41,13 +41,7 @@
 
 dns_cyon_add() {
   _load_credentials
-
-  # Read the required parameters to add the TXT entry.
-  fulldomain=$1
-  txtvalue=$2
-
-  # Cookiejar required for login session, as cyon.ch has no official API (yet).
-  cookiejar=$(tempfile)
+  _load_parameters "$@"
 
   _info_header "add"
   _login
@@ -60,12 +54,7 @@ dns_cyon_add() {
 
 dns_cyon_rm() {
   _load_credentials
-
-  # Read the required parameters to delete the TXT entry.
-  fulldomain=$1
-
-  # Cookiejar required for login session, as cyon.ch has no official API (yet).
-  cookiejar=$(tempfile)
+  _load_parameters "$@"
 
   _info_header "delete"
   _login
@@ -105,13 +94,37 @@ _load_credentials() {
   fi
 }
 
-_info_header() {
+_is_idn() {
+  _idn_temp=$(printf "%s" "$1" | tr -d "[0-9a-zA-Z.,-]")
+  _idn_temp2="$(printf "%s" "$1" | grep -o "xn--")"
+  [ "$_idn_temp" ] || [ "$_idn_temp2" ]
+}
+
+_load_parameters() {
+  # Read the required parameters to add the TXT entry.
+  fulldomain="$(echo "$1" | tr '[:upper:]' '[:lower:]')"
+  fulldomain_idn="${fulldomain}"
+
+  # Special case for IDNs, as cyon needs a domain environment change,
+  # which uses the "pretty" instead of the punycode version.
+  if _is_idn "$1" ; then
+    fulldomain="$(idn -u "${fulldomain}")"
+    fulldomain_idn="$(idn -a "${fulldomain}")"
+  fi
+
   _debug fulldomain "$fulldomain"
+  _debug fulldomain_idn "$fulldomain_idn"
+
+  txtvalue="$2"
+  _debug txtvalue "$txtvalue"
+
+  # Cookiejar required for login session, as cyon.ch has no official API (yet).
+  cookiejar=$(tempfile)
   _debug cookiejar "$cookiejar"
+}
 
+_info_header() {
   if [ "$1" = "add" ]; then
-    _debug txtvalue "$txtvalue"
-
     _info ""
     _info "+---------------------------------------------+"
     _info "| Adding DNS TXT entry to your cyon.ch domain |"
@@ -224,7 +237,7 @@ _add_txt() {
     --compressed \
     -b "${cookiejar}" \
     -H "X-Requested-With: XMLHttpRequest" \
-    -d "zone=${fulldomain}.&ttl=900&type=TXT&value=${txtvalue}")
+    -d "zone=${fulldomain_idn}.&ttl=900&type=TXT&value=${txtvalue}")
 
   _debug addtxt_response "${addtxt_response}"
 
@@ -260,10 +273,10 @@ _delete_txt() {
   _check_2fa_miss "${list_txt_response}"
 
   # Find and delete all acme challenge entries for the $fulldomain.
-  echo "$list_txt_response" | jq -r --arg fulldomain "${fulldomain}." '
+  echo "$list_txt_response" | jq -r --arg fulldomain_idn "${fulldomain_idn}." '
     .rows[] |
       label $out|
-      if .[0] != $fulldomain then
+      if .[0] != $fulldomain_idn then
         break $out
       else
         .[4]|
