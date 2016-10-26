@@ -106,10 +106,11 @@ _load_credentials() {
 }
 
 _info_header() {
+  _debug fulldomain "$fulldomain"
+  _debug cookiejar "$cookiejar"
+
   if [ "$1" = "add" ]; then
-    _debug fulldomain "$fulldomain"
     _debug txtvalue "$txtvalue"
-    _debug cookiejar "$cookiejar"
 
     _info ""
     _info "+---------------------------------------------+"
@@ -121,13 +122,10 @@ _info_header() {
     _info "  * Cookie Jar:  ${cookiejar}"
     _info ""
   elif [ "$1" = "delete" ]; then
-    _debug fulldomain "$fulldomain"
-    _debug cookiejar "$cookiejar"
-
     _info ""
-    _info "+------------------------------------------------+"
+    _info "+-------------------------------------------------+"
     _info "| Deleting DNS TXT entry from your cyon.ch domain |"
-    _info "+------------------------------------------------+"
+    _info "+-------------------------------------------------+"
     _info ""
     _info "  * Full Domain: ${fulldomain}"
     _info "  * Cookie Jar:  ${cookiejar}"
@@ -319,8 +317,8 @@ _fail() {
 }
 
 _cleanup() {
-  _debug "Remove cookie jar: ${cookiejar}"
-  rm "${cookiejar}"
   _info "  - Cleanup."
+  _debug "Remove cookie jar: ${cookiejar}"
+  rm "${cookiejar}" 2>/dev/null
   _info ""
 }
