@@ -14,7 +14,8 @@
 # 5. Awesomeness!
 #
 # *Note:*
-# jq is required too, get it here: https://stedolan.github.io/jq/download/
+# - jq is required too, get it here: https://stedolan.github.io/jq/download/
+# - When using 2 Factor Authentication, oathtool is required!
 #
 # Author: Armando Lüscher <armando@noplanman.ch>
 ########
@@ -40,6 +41,10 @@
 ########
 
 dns_cyon_add() {
+  if ! _exists jq; then
+    _fail "Please install jq to use cyon.ch DNS API."
+  fi
+
   _load_credentials
   _load_parameters "$@"
 
@@ -80,7 +85,7 @@ _load_credentials() {
   if [ -z "${cyon_username}" ] || [ -z "${cyon_password}" ] ; then
     _err ""
     _err "You haven't set your cyon.ch login credentials yet."
-    _err "Please set the \$cyon_username and \$cyon_password variables."
+    _err "Please set the required cyon environment variables."
     _err ""
     exit 1
   fi
@@ -108,6 +113,10 @@ _load_parameters() {
   # Special case for IDNs, as cyon needs a domain environment change,
   # which uses the "pretty" instead of the punycode version.
   if _is_idn "$1" ; then
+    if ! _exists idn; then
+      _fail "Please install idn to process IDN names."
+    fi
+
     fulldomain="$(idn -u "${fulldomain}")"
     fulldomain_idn="$(idn -a "${fulldomain}")"
   fi
@@ -174,6 +183,10 @@ _login() {
   # 2FA authentication with OTP?
   if [ ! -z "${cyon_otp_secret}" ] ; then
     _info "  - Authorising with OTP code..."
+
+    if ! _exists oathtool; then
+      _fail "Please install oathtool to use 2 Factor Authentication."
+    fi
 
     # Get OTP code with the defined secret.
     otp_code=$(oathtool --base32 --totp "${cyon_otp_secret}" 2>/dev/null)
