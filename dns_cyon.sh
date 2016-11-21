@@ -286,7 +286,7 @@ _delete_txt() {
   _check_2fa_miss "${list_txt_response}"
 
   # Find and delete all acme challenge entries for the $fulldomain.
-  echo "$list_txt_response" | jq -r --arg fulldomain_idn "${fulldomain_idn}." '
+  _dns_entries=$(echo "$list_txt_response" | jq -r --arg fulldomain_idn "${fulldomain_idn}." '
     .rows[] |
       label $out|
       if .[0] != $fulldomain_idn then
@@ -295,8 +295,17 @@ _delete_txt() {
         .[4]|
         capture("data-hash=\"(?<hash>[^\"]*)\" data-identifier=\"(?<identifier>[^\"]*)\"";"g")|
         .hash + " " + .identifier
-    end' | while read -r _hash _identifier
+    end')
+  _dns_entries_cnt=$(echo "${_dns_entries}" | wc -l | grep -o '\d')
+
+  _info "    (entries found: ${_dns_entries_cnt})"
+
+  _dns_entry_num=0
+
+  echo "${_dns_entries}" | while read -r _hash _identifier
   do
+    ((_dns_entry_num++))
+
     delete_txt_response=$(curl \
       "https://my.cyon.ch/domain/dnseditor/delete-record-async" \
       -s \
@@ -318,9 +327,9 @@ _delete_txt() {
       if [ "${delete_txt_status}" = "null" ]; then
         delete_txt_message=$(echo "${delete_txt_response}" | jq -r '.error.message')
       fi
-      _err "    ${delete_txt_message} (${_identifier})"
+      _err "    [${_dns_entry_num}/${_dns_entries_cnt}] ${delete_txt_message} (${_identifier})"
     else
-      _info "    success (${_identifier})"
+      _info "    [${_dns_entry_num}/${_dns_entries_cnt}] success (${_identifier})"
     fi
   done
 
