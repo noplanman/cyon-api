@@ -14,7 +14,6 @@
 # 5. Awesomeness!
 #
 # *Note:*
-# - jq is required too, get it here: https://stedolan.github.io/jq/download/
 # - When using 2 Factor Authentication, oathtool is required!
 #
 # Author: Armando Lüscher <armando@noplanman.ch>
@@ -41,10 +40,6 @@
 ########
 
 dns_cyon_add() {
-  if ! _exists jq; then
-    _fail "Please install jq to use cyon.ch DNS API."
-  fi
-
   _load_credentials
   _load_parameters "$@"
 
@@ -76,13 +71,16 @@ dns_cyon_rm() {
 
 _load_credentials() {
   # Convert loaded password to/from base64 as needed.
-  if [ "${cyon_password_b64}" ] ; then
-    cyon_password="$(echo "${cyon_password_b64}" | _dbase64)"
-  elif [ "${cyon_password}" ] ; then
-    cyon_password_b64="$(echo "${cyon_password}" | _base64)"
+  if [ "${cyon_password_b64}" ]; then
+    cyon_password="$(printf "%s" "${cyon_password_b64}" | _dbase64)"
+  elif [ "${cyon_password}" ]; then
+    cyon_password_b64="$(printf "%s" "${cyon_password}" | _base64)"
   fi
 
-  if [ -z "${cyon_username}" ] || [ -z "${cyon_password}" ] ; then
+  if [ -z "${cyon_username}" ] || [ -z "${cyon_password}" ]; then
+    cyon_username=""
+    cyon_password=""
+    cyon_otp_secret=""
     _err ""
     _err "You haven't set your cyon.ch login credentials yet."
     _err "Please set the required cyon environment variables."
@@ -94,7 +92,7 @@ _load_credentials() {
   _debug "Save credentials to account.conf"
   _saveaccountconf cyon_username "${cyon_username}"
   _saveaccountconf cyon_password_b64 "$cyon_password_b64"
-  if [ ! -z "${cyon_otp_secret}" ] ; then
+  if [ ! -z "${cyon_otp_secret}" ]; then
     _saveaccountconf cyon_otp_secret "$cyon_otp_secret"
   fi
 }
@@ -107,12 +105,12 @@ _is_idn() {
 
 _load_parameters() {
   # Read the required parameters to add the TXT entry.
-  fulldomain="$(echo "$1" | tr '[:upper:]' '[:lower:]')"
+  fulldomain="$(printf "%s" "$1" | tr '[:upper:]' '[:lower:]')"
   fulldomain_idn="${fulldomain}"
 
   # Special case for IDNs, as cyon needs a domain environment change,
   # which uses the "pretty" instead of the punycode version.
-  if _is_idn "$1" ; then
+  if _is_idn "$1"; then
     if ! _exists idn; then
       _fail "Please install idn to process IDN names."
     fi
@@ -169,19 +167,19 @@ _login() {
   _debug login_response "${login_response}"
 
   # Bail if login fails.
-  if [ "$(echo "${login_response}" | jq -r '.onSuccess')" != "success" ]; then
-    _fail "    $(echo "${login_response}" | jq -r '.message')"
+  if [ "$(printf "%s" "${login_response}" | _get_response_success)" != "success" ]; then
+    _fail "    $(printf "%s" "${login_response}" | _get_response_message)"
   fi
 
   _info "    success"
 
-
   # NECESSARY!! Load the main page after login, before the OTP check.
   curl "https://my.cyon.ch/" -s --compressed -b "${cookiejar}" >/dev/null
 
+  # todo: instead of just checking if the env variable is defined, check if we actually need to do a 2FA auth request.
 
   # 2FA authentication with OTP?
-  if [ ! -z "${cyon_otp_secret}" ] ; then
+  if [ ! -z "${cyon_otp_secret}" ]; then
     _info "  - Authorising with OTP code..."
 
     if ! _exists oathtool; then
@@ -203,8 +201,8 @@ _login() {
     _debug otp_response "${otp_response}"
 
     # Bail if OTP authentication fails.
-    if [ "$(echo "${otp_response}" | jq -r '.onSuccess')" != "success" ]; then
-      _fail "    $(echo "${otp_response}" | jq -r '.message')"
+    if [ "$(printf "%s" "${otp_response}" | _get_response_success)" != "success" ]; then
+      _fail "    $(printf "%s" "${otp_response}" | _get_response_message)"
     fi
 
     _info "    success"
@@ -217,7 +215,7 @@ _domain_env() {
   _info "  - Changing domain environment..."
 
   # Get the "example.com" part of the full domain name.
-  domain_env=$(echo "${fulldomain}" | sed -E -e 's/.*\.(.*\..*)$/\1/')
+  domain_env=$(printf "%s" "${fulldomain}" | sed -E -e 's/.*\.(.*\..*)$/\1/')
   _debug "Changing domain environment to ${domain_env}"
 
   domain_env_response=$(curl \
@@ -231,11 +229,11 @@ _domain_env() {
 
   _check_2fa_miss "${domain_env_response}"
 
-  domain_env_success=$(echo "${domain_env_response}" | jq -r '.authenticated')
+  domain_env_success=$(printf "%s" "${domain_env_response}" | _egrep_o '"authenticated":\w*' | cut -d : -f 2)
 
   # Bail if domain environment change fails.
   if [ "${domain_env_success}" != "true" ]; then
-    _fail "    $(echo "${domain_env_response}" | jq -r '.message')"
+    _fail "    $(printf "%s" "${domain_env_response}" | _get_response_message)"
   fi
 
   _info "    success"
@@ -256,14 +254,11 @@ _add_txt() {
 
   _check_2fa_miss "${addtxt_response}"
 
-  addtxt_message=$(echo "${addtxt_response}" | jq -r '.message')
-  addtxt_status=$(echo "${addtxt_response}" | jq -r '.status')
+  addtxt_message=$(printf "%s" "${addtxt_response}" | _get_response_message)
+  addtxt_status=$(printf "%s" "${addtxt_response}" | _get_response_status)
 
   # Bail if adding TXT entry fails.
   if [ "${addtxt_status}" != "true" ]; then
-    if [ "${addtxt_status}" = "null" ]; then
-      addtxt_message=$(echo "${addtxt_response}" | jq -r '.error.message')
-    fi
     _fail "    ${addtxt_message}"
   fi
 
@@ -279,32 +274,23 @@ _delete_txt() {
     -s \
     -b "${cookiejar}" \
     --compressed \
-    -H "X-Requested-With: XMLHttpRequest")
+    -H "X-Requested-With: XMLHttpRequest" \
+    | sed -e 's/data-hash/\\ndata-hash/g')
 
   _debug list_txt_response "${list_txt_response}"
 
   _check_2fa_miss "${list_txt_response}"
 
   # Find and delete all acme challenge entries for the $fulldomain.
-  _dns_entries=$(echo "$list_txt_response" | jq -r --arg fulldomain_idn "${fulldomain_idn}." '
-    .rows[] |
-      label $out|
-      if .[0] != $fulldomain_idn then
-        break $out
-      else
-        .[4]|
-        capture("data-hash=\"(?<hash>[^\"]*)\" data-identifier=\"(?<identifier>[^\"]*)\"";"g")|
-        .hash + " " + .identifier
-    end')
-  _dns_entries_cnt=$(echo "${_dns_entries}" | wc -l | grep -o '\d')
+  _dns_entries=$(printf "%s" "$list_txt_response" | sed -n 's/data-hash=\\"\([^"]*\)\\" data-identifier=\\"\([^"]*\)\\".*/\1 \2/p')
 
-  _info "    (entries found: ${_dns_entries_cnt})"
+  printf "%s" "${_dns_entries}" | while read -r _hash _identifier; do
+    dns_type="$(printf "%s" "$_identifier" | cut -d'|' -f1)"
+    dns_domain="$(printf "%s" "$_identifier" | cut -d'|' -f2)"
 
-  _dns_entry_num=0
-
-  echo "${_dns_entries}" | while read -r _hash _identifier
-  do
-    ((_dns_entry_num++))
+    if [ "${dns_type}" != "TXT" ] || [ "${dns_domain}" != "${fulldomain_idn}." ]; then
+      continue
+    fi
 
     delete_txt_response=$(curl \
       "https://my.cyon.ch/domain/dnseditor/delete-record-async" \
@@ -319,17 +305,14 @@ _delete_txt() {
 
     _check_2fa_miss "${delete_txt_response}"
 
-    delete_txt_message=$(echo "${delete_txt_response}" | jq -r '.message')
-    delete_txt_status=$(echo "${delete_txt_response}" | jq -r '.status')
+    delete_txt_message=$(printf "%s" "${delete_txt_response}" | _get_response_message)
+    delete_txt_status=$(printf "%s" "${delete_txt_response}" | _get_response_status)
 
     # Skip if deleting TXT entry fails.
     if [ "${delete_txt_status}" != "true" ]; then
-      if [ "${delete_txt_status}" = "null" ]; then
-        delete_txt_message=$(echo "${delete_txt_response}" | jq -r '.error.message')
-      fi
-      _err "    [${_dns_entry_num}/${_dns_entries_cnt}] ${delete_txt_message} (${_identifier})"
+      _err "    ${delete_txt_message} (${_identifier})"
     else
-      _info "    [${_dns_entry_num}/${_dns_entries_cnt}] success (${_identifier})"
+      _info "    success (${_identifier})"
     fi
   done
 
@@ -337,9 +320,21 @@ _delete_txt() {
   _info ""
 }
 
+_get_response_message() {
+  _egrep_o '"message":"[^"]*"' | cut -d : -f 2 | tr -d '"'
+}
+
+_get_response_status() {
+  _egrep_o '"status":\w*' | cut -d : -f 2
+}
+
+_get_response_success() {
+  _egrep_o '"onSuccess":"[^"]*"' | cut -d : -f 2 | tr -d '"'
+}
+
 _check_2fa_miss() {
   # Did we miss the 2FA?
-  if [[ "$1" =~ "multi_factor_form" ]] ; then
+  if test "${1#*multi_factor_form}" != "$1"; then
     _fail "    Missed OTP authentication!"
   fi
 }
