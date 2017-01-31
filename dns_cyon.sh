@@ -89,19 +89,14 @@ _cyon_load_credentials() {
 }
 
 _cyon_is_idn() {
-  _idn_temp="$(printf "%s" "${1}" | tr -d "[0-9a-zA-Z.,-_]")"
+  _idn_temp="$(printf "%s" "${1}" | tr -d "0-9a-zA-Z.,-_")"
   _idn_temp2="$(printf "%s" "${1}" | grep -o "xn--")"
   [ "$_idn_temp" ] || [ "$_idn_temp2" ]
 }
 
-# comment on https://stackoverflow.com/a/10797966
-_cyon_urlencode() {
-  curl -Gso /dev/null -w "%{url_effective}" --data-urlencode @- "" | cut -c 3-
-}
-
 _cyon_load_parameters() {
   # Read the required parameters to add the TXT entry.
-  fulldomain="$(printf "%s" "${1}" | tr '[A-Z]' '[a-z]')"
+  fulldomain="$(printf "%s" "${1}" | tr "A-Z" "a-z")"
   fulldomain_idn="${fulldomain}"
 
   # Special case for IDNs, as cyon needs a domain environment change,
@@ -125,6 +120,7 @@ _cyon_load_parameters() {
 
   # This header is required for curl calls.
   _H1="X-Requested-With: XMLHttpRequest"
+  export _H1
 }
 
 _cyon_print_header() {
@@ -155,8 +151,8 @@ _cyon_get_cookie_header() {
 _cyon_login() {
   _info "  - Logging in..."
 
-  username_encoded="$(printf "%s" "${CY_Username}" | _cyon_urlencode)"
-  password_encoded="$(printf "%s" "${CY_Password}" | _cyon_urlencode)"
+  username_encoded="$(printf "%s" "${CY_Username}" | _url_encode)"
+  password_encoded="$(printf "%s" "${CY_Password}" | _url_encode)"
 
   login_url="https://my.cyon.ch/auth/index/dologin-async"
   login_data="$(printf "%s" "username=${username_encoded}&password=${password_encoded}&pathname=%2F")"
@@ -175,6 +171,8 @@ _cyon_login() {
 
   # NECESSARY!! Load the main page after login, to get the new cookie.
   _H2="$(_cyon_get_cookie_header)"
+  export _H2
+
   _get "https://my.cyon.ch/" >/dev/null
 
   # todo: instead of just checking if the env variable is defined, check if we actually need to do a 2FA auth request.
@@ -293,8 +291,8 @@ _cyon_delete_txt() {
       continue
     fi
 
-    hash_encoded="$(printf "%s" "${_hash}" | _cyon_urlencode)"
-    identifier_encoded="$(printf "%s" "${_identifier}" | _cyon_urlencode)"
+    hash_encoded="$(printf "%s" "${_hash}" | _url_encode)"
+    identifier_encoded="$(printf "%s" "${_identifier}" | _url_encode)"
 
     delete_txt_url="https://my.cyon.ch/domain/dnseditor/delete-record-async"
     delete_txt_data="$(printf "%s" "hash=${hash_encoded}&identifier=${identifier_encoded}")"
